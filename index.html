@@ -404,9 +404,14 @@
 <!-- file:// warning (shown via JS) -->
 <div class="warn-banner" id="fileWarn" style="display:none">
   ⚠️ <strong>このファイルは <code>file://</code> プロトコルで開かれています。</strong>
-  Chrome では <code>file://</code> からの Web MIDI API へのアクセスがブロックされる場合があります。<br>
-  解決策: <code>python -m http.server 8080</code> などでローカルサーバーを立ち上げ、
-  <code>http://localhost:8080</code> からアクセスしてください。
+  Chromeでは <code>file://</code> からの Web MIDI API へのアクセスがブロックされます。<br>
+  → <strong>https://t-kanna-ops.github.io/midi-res/</strong> をお使いください。
+</div>
+
+<!-- MIDI permission guide (always visible) -->
+<div class="warn-banner" id="permGuide" style="background:rgba(124,111,255,0.07);border-color:rgba(124,111,255,0.35);color:#a89fff;">
+  💡 <strong>初回は Chrome の MIDI 権限許可が必要です。</strong>「🔌 MIDI 接続」を押すとアドレスバー付近に権限ポップアップが表示されます。<strong>「許可」</strong>を選んでください。<br>
+  許可済みなのにデバイスが出ない場合 → アドレスバー左の 🔒 →「サイトの設定」→「MIDIデバイス」を<strong>許可</strong>に変更してページを再読込してください。
 </div>
 
 <header>
@@ -774,13 +779,40 @@ rescanBtn.addEventListener('click',  () => {
   midiStatusText.textContent = `再スキャン完了: 入力 ${ic}件 / 出力 ${oc}件`;
 });
 
-// Auto-try MIDI init on page load (no user gesture required for non-sysex in Chrome)
-document.addEventListener('DOMContentLoaded', () => {
+// Check permission state on load (read-only, no request) and show guidance
+document.addEventListener('DOMContentLoaded', async () => {
   if (location.protocol === 'file:') {
     document.getElementById('fileWarn').style.display = 'block';
   }
-  // Best-effort auto-init; if browser blocks it, user clicks "MIDI 接続"
-  initMidi().catch(() => {});
+
+  // If permissions API available, check if MIDI was previously blocked
+  if (navigator.permissions) {
+    try {
+      const perm = await navigator.permissions.query({ name: 'midi', sysex: false });
+      if (perm.state === 'denied') {
+        midiStatusText.textContent = 'MIDI権限がブロックされています → アドレスバーの🔒をクリックして許可してください';
+        setMidiDot('error');
+        connectBtn.disabled = true;
+      } else if (perm.state === 'granted') {
+        // Permission already granted: safe to auto-init on load
+        initMidi().catch(() => {});
+      }
+      // 'prompt' state: wait for user to click the button
+      perm.onchange = () => {
+        if (perm.state === 'granted') {
+          midiStatusText.textContent = 'MIDI権限が許可されました。「MIDI 接続」を押してください';
+          setMidiDot('');
+          connectBtn.disabled = false;
+          connectBtn.textContent = '🔌 MIDI 接続';
+          connectBtn.classList.remove('midi-ok');
+        } else if (perm.state === 'denied') {
+          midiStatusText.textContent = 'MIDI権限がブロックされています → アドレスバーの🔒から許可';
+          setMidiDot('error');
+          connectBtn.disabled = true;
+        }
+      };
+    } catch (_) { /* permissions API non-functional, ignore */ }
+  }
 });
 
 // ── Start / Stop ───────────────────────────────────────────────────────────
