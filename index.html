@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MIDI Generative Delay</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0f1a;
+      --surface:   #151827;
+      --surface2:  #1e2136;
+      --surface3:  #262a45;
+      --accent:    #7c6fff;
+      --accent2:   #ff6b8a;
+      --green:     #3ddc84;
+      --yellow:    #ffc857;
+      --text:      #e4e6f0;
+      --muted:     #7a7d99;
+      --border:    #2a2d48;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 28px 20px 48px;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────────── */
+    header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    h1 {
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(125deg, var(--accent) 0%, var(--accent2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      margin-top: 6px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Grid ─────────────────────────────────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: auto auto;
+      gap: 18px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .card-midi      { grid-column: 1; grid-row: 1; }
+    .card-gen       { grid-column: 2; grid-row: 1; }
+    .card-status    { grid-column: 3; grid-row: 1; }
+    .card-memory    { grid-column: 1 / 4; grid-row: 2; }
+
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+      .card-midi    { grid-column: 1; grid-row: 1; }
+      .card-gen     { grid-column: 2; grid-row: 1; }
+      .card-status  { grid-column: 1 / 3; grid-row: 2; }
+      .card-memory  { grid-column: 1 / 3; grid-row: 3; }
+    }
+
+    @media (max-width: 540px) {
+      .grid { grid-template-columns: 1fr; }
+      .card-midi, .card-gen, .card-status, .card-memory {
+        grid-column: 1; grid-row: auto;
+      }
+    }
+
+    /* ── Card ─────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px 22px;
+    }
+
+    .card-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Form controls ───────────────────────────────────────────────────── */
+    .form-group { margin-bottom: 14px; }
+    .form-group:last-child { margin-bottom: 0; }
+
+    label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    select, input[type="number"] {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 0.88rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+      appearance: auto;
+    }
+
+    select:focus, input[type="number"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(124, 111, 255, 0.15);
+    }
+
+    select option { background: var(--surface2); }
+
+    /* ── Range pair ──────────────────────────────────────────────────────── */
+    .range-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    /* ── Button ──────────────────────────────────────────────────────────── */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 11px;
+      border: none;
+      border-radius: 9px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      letter-spacing: 0.04em;
+    }
+
+    .btn-start {
+      background: var(--accent);
+      color: #fff;
+      margin-top: 14px;
+      box-shadow: 0 4px 16px rgba(124, 111, 255, 0.3);
+    }
+
+    .btn-start:hover {
+      background: #6c5fe8;
+      transform: translateY(-1px);
+    }
+
+    .btn-start.running {
+      background: var(--accent2);
+      box-shadow: 0 4px 16px rgba(255, 107, 138, 0.3);
+    }
+
+    .btn-start.running:hover { background: #e85572; }
+
+    /* ── MIDI status bar ─────────────────────────────────────────────────── */
+    .midi-statusbar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 10px;
+      font-size: 0.77rem;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+
+    .dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.error     { background: var(--accent2); }
+
+    /* ── Status card ─────────────────────────────────────────────────────── */
+    .scale-display {
+      font-size: 1.55rem;
+      font-weight: 800;
+      text-align: center;
+      padding: 14px 10px;
+      background: var(--surface2);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      margin-bottom: 14px;
+      letter-spacing: -0.01em;
+      transition: color 0.4s;
+    }
+
+    .scale-display.analyzing { color: var(--muted); }
+    .scale-display.found     { color: var(--green); }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .status-row:last-child { border-bottom: none; }
+
+    .status-key {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .status-val {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .count-num {
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .phase-badge {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 20px;
+      letter-spacing: 0.04em;
+    }
+
+    .phase-a { background: rgba(255,200,87,0.15); color: var(--yellow); }
+    .phase-b { background: rgba(124,111,255,0.15); color: var(--accent); }
+
+    /* ── Activity indicators ─────────────────────────────────────────────── */
+    .activity-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .act-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--surface3);
+      transition: background 0.08s, box-shadow 0.08s;
+    }
+
+    .act-dot.flash-in  { background: var(--yellow);  box-shadow: 0 0 8px var(--yellow); }
+    .act-dot.flash-out { background: var(--green);   box-shadow: 0 0 8px var(--green); }
+
+    .act-label {
+      font-size: 0.68rem;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+    }
+
+    /* ── Memory list ─────────────────────────────────────────────────────── */
+    .memory-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .memory-count {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .note-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      min-height: 44px;
+    }
+
+    .note-tag {
+      padding: 5px 11px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--muted);
+      transition: border-color 0.3s, color 0.3s;
+      cursor: default;
+      user-select: none;
+    }
+
+    .note-tag.newest {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(124, 111, 255, 0.1);
+    }
+
+    .note-tag:hover {
+      border-color: var(--muted);
+      color: var(--text);
+    }
+
+    .empty-msg {
+      font-size: 0.82rem;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    /* ── Warning banner ──────────────────────────────────────────────────── */
+    .warn-banner {
+      max-width: 1100px;
+      margin: 0 auto 20px;
+      padding: 12px 18px;
+      background: rgba(255, 200, 87, 0.1);
+      border: 1px solid rgba(255, 200, 87, 0.45);
+      border-radius: 10px;
+      font-size: 0.82rem;
+      color: var(--yellow);
+      line-height: 1.7;
+    }
+
+    .warn-banner code {
+      background: rgba(255,200,87,0.15);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: 'Consolas', monospace;
+      font-size: 0.9em;
+    }
+
+    /* ── Button row (connect + rescan) ───────────────────────────────────── */
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .btn-connect {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-connect:hover:not(:disabled) { background: rgba(124,111,255,0.12); }
+
+    .btn-connect.midi-ok {
+      border-color: var(--green);
+      color: var(--green);
+      background: rgba(61,220,132,0.08);
+    }
+
+    .btn-rescan {
+      width: 42px;
+      padding: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 1.15rem;
+      line-height: 1;
+    }
+
+    .btn-rescan:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+
+    .btn-start { margin-top: 8px; }
+
+    select:disabled,
+    .btn-start:disabled,
+    .btn-rescan:disabled { opacity: 0.38; cursor: not-allowed; pointer-events: none; }
+  </style>
+</head>
+<body>
+
+<!-- file:// warning (shown via JS) -->
+<div class="warn-banner" id="fileWarn" style="display:none">
+  ⚠️ <strong>このファイルは <code>file://</code> プロトコルで開かれています。</strong>
+  Chrome では <code>file://</code> からの Web MIDI API へのアクセスがブロックされる場合があります。<br>
+  解決策: <code>python -m http.server 8080</code> などでローカルサーバーを立ち上げ、
+  <code>http://localhost:8080</code> からアクセスしてください。
+</div>
+
+<header>
+  <h1>MIDI Generative Delay</h1>
+  <p class="subtitle">Probabilistic MIDI Transformation &nbsp;·&nbsp; 8th-Note Lookahead Delay</p>
+</header>
+
+<div class="grid">
+
+  <!-- ── MIDI Device Settings ─────────────────────────────────────────── -->
+  <div class="card card-midi">
+    <div class="card-title">MIDI デバイス</div>
+
+    <div class="form-group">
+      <label for="inputDevice">入力デバイス</label>
+      <select id="inputDevice" disabled>
+        <option value="">-- MIDI接続後に表示 --</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="outputDevice">出力デバイス</label>
+      <select id="outputDevice" disabled>
+        <option value="">-- MIDI接続後に表示 --</option>
+      </select>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-connect" id="connectBtn">🔌 MIDI 接続</button>
+      <button class="btn btn-rescan" id="rescanBtn" disabled title="デバイスを再スキャン">↺</button>
+    </div>
+
+    <button class="btn btn-start" id="startBtn" disabled>▶ Start</button>
+
+    <div class="midi-statusbar">
+      <div class="dot" id="midiDot"></div>
+      <span id="midiStatusText">MIDI 未接続</span>
+    </div>
+  </div>
+
+  <!-- ── Generative Settings ──────────────────────────────────────────── -->
+  <div class="card card-gen">
+    <div class="card-title">ジェネレーティブ設定</div>
+
+    <div class="form-group">
+      <label for="bpmInput">BPM</label>
+      <input type="number" id="bpmInput" value="120" min="20" max="300" step="1">
+    </div>
+
+    <div class="form-group">
+      <label for="scaleSelect">ベーススケール</label>
+      <select id="scaleSelect">
+        <option value="major">Major</option>
+        <option value="minor">Minor</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>出力音域</label>
+      <div class="range-pair">
+        <div>
+          <label for="minNote">Min</label>
+          <select id="minNote"></select>
+        </div>
+        <div>
+          <label for="maxNote">Max</label>
+          <select id="maxNote"></select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Status ───────────────────────────────────────────────────────── -->
+  <div class="card card-status">
+    <div class="card-title">ステータス</div>
+
+    <div class="scale-display analyzing" id="scaleDisplay">Analyzing...</div>
+
+    <div class="status-row">
+      <span class="status-key">入力ノート数</span>
+      <span class="status-val">
+        <span class="count-num" id="noteCountDisplay">0</span>
+        <span class="phase-badge phase-a" id="phaseBadge">Phase A</span>
+      </span>
+    </div>
+
+    <div class="status-row">
+      <span class="status-key">遅延時間</span>
+      <span class="status-val" id="delayDisplay">250 ms</span>
+    </div>
+
+    <div class="status-row">
+      <span class="status-key">MIDI アクティビティ</span>
+      <span class="status-val">
+        <span class="activity-group">
+          <span class="act-dot" id="inDot"></span>
+          <span class="act-label">IN</span>
+        </span>
+        <span class="activity-group">
+          <span class="act-dot" id="outDot"></span>
+          <span class="act-label">OUT</span>
+        </span>
+      </span>
+    </div>
+  </div>
+
+  <!-- ── Note Memory ───────────────────────────────────────────────────── -->
+  <div class="card card-memory">
+    <div class="memory-header">
+      <div class="card-title" style="margin-bottom:0">記憶ノートリスト</div>
+      <span class="memory-count" id="memoryCount">0 / 32</span>
+    </div>
+    <div class="note-tags" id="noteList">
+      <span class="empty-msg">ノートを入力してください...</span>
+    </div>
+  </div>
+
+</div><!-- /grid -->
+
+<script>
+'use strict';
+
+// ── Music constants ────────────────────────────────────────────────────────
+const NOTE_NAMES     = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const MAJOR_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_INTERVALS = [0, 2, 3, 5, 7, 8, 10];
+
+// ── Music helpers ──────────────────────────────────────────────────────────
+
+function getIntervals(mode) {
+  return mode === 'major' ? MAJOR_INTERVALS : MINOR_INTERVALS;
+}
+
+/** Return pitch-class of the nth scale degree (1-indexed) from a root PC. */
+function scaleDegreePC(rootPC, mode, degree) {
+  return (rootPC + getIntervals(mode)[degree - 1]) % 12;
+}
+
+/** Return a random pitch-class NOT in the given scale. */
+function randomOutOfScalePC(rootPC, mode) {
+  const scaleSet = new Set(getIntervals(mode).map(i => (rootPC + i) % 12));
+  const oos = [];
+  for (let i = 0; i < 12; i++) if (!scaleSet.has(i)) oos.push(i);
+  return oos[Math.floor(Math.random() * oos.length)];
+}
+
+/** MIDI note number → human-readable name (e.g. 60 → "C4"). */
+function midiName(midi) {
+  return NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
+}
+
+/**
+ * Given a target pitch-class, find the MIDI note within [minMidi, maxMidi]
+ * whose octave is closest to inputMidi. Returns inputMidi clamped to range
+ * if no match exists (shouldn't normally happen with a reasonable range).
+ */
+function adjustToRange(targetPC, inputMidi, minMidi, maxMidi) {
+  if (minMidi > maxMidi) { const t = minMidi; minMidi = maxMidi; maxMidi = t; }
+  let best = null;
+  let bestDist = Infinity;
+  for (let n = minMidi; n <= maxMidi; n++) {
+    if (n % 12 === targetPC) {
+      const d = Math.abs(n - inputMidi);
+      if (d < bestDist) { bestDist = d; best = n; }
+    }
+  }
+  return best !== null ? best : Math.max(minMidi, Math.min(maxMidi, inputMidi));
+}
+
+/**
+ * Analyse the most likely scale (root + mode) from the given array of MIDI
+ * note numbers by simple histogram scoring.
+ */
+function analyzeScale(memory) {
+  if (memory.length === 0) return null;
+  let best = null, bestScore = -1;
+  for (let root = 0; root < 12; root++) {
+    for (const mode of ['major', 'minor']) {
+      const scaleSet = new Set(getIntervals(mode).map(i => (root + i) % 12));
+      let score = 0;
+      for (const n of memory) if (scaleSet.has(n % 12)) score++;
+      if (score > bestScore) { bestScore = score; best = { root, mode }; }
+    }
+  }
+  return best;
+}
+
+/**
+ * Phase A (1–8th note): input-based probabilistic note selection.
+ * Phase B (9th+ note): 50% input-based + 50% analysed-scale-based.
+ */
+function transformNote(inputMidi, noteCount, selectedMode, analyzedScale, minMidi, maxMidi) {
+  const inputPC = inputMidi % 12;
+  const r = Math.random() * 100;
+  let pc;
+
+  if (noteCount <= 8) {
+    // ── Phase A ──────────────────────────────────────────────────────────
+    if      (r <  50) pc = scaleDegreePC(inputPC, selectedMode, 1);   // 50 % Tonic
+    else if (r <  80) pc = scaleDegreePC(inputPC, selectedMode, 4);   // 30 % Subdominant
+    else if (r <  90) pc = scaleDegreePC(inputPC, selectedMode, 5);   // 10 % Dominant
+    else if (r <  95) pc = scaleDegreePC(inputPC, selectedMode, 2);   //  5 % 2nd
+    else if (r <  99) pc = scaleDegreePC(inputPC, selectedMode, 6);   //  4 % 6th
+    else              pc = randomOutOfScalePC(inputPC, selectedMode); //  1 % Out of scale
+
+  } else {
+    // ── Phase B ──────────────────────────────────────────────────────────
+    // Rule 1 (50 % weight, input as root):
+    //   25 % Tonic | 15 % Sub | 5 % Dom | 2.5 % 2nd | 2 % 6th | 0.5 % OOS
+    // Rule 2 (50 % weight, analysed scale):
+    //   25 % Tonic | 15 % Sub | 5 % Dom | 5 % OOS
+    const as = analyzedScale || { root: inputPC, mode: selectedMode };
+
+    if      (r <  25)   pc = scaleDegreePC(inputPC, selectedMode, 1);  // R1 Tonic
+    else if (r <  40)   pc = scaleDegreePC(inputPC, selectedMode, 4);  // R1 Sub
+    else if (r <  45)   pc = scaleDegreePC(inputPC, selectedMode, 5);  // R1 Dom
+    else if (r <  47.5) pc = scaleDegreePC(inputPC, selectedMode, 2);  // R1 2nd
+    else if (r <  49.5) pc = scaleDegreePC(inputPC, selectedMode, 6);  // R1 6th
+    else if (r <  50)   pc = randomOutOfScalePC(inputPC, selectedMode);// R1 OOS
+    else if (r <  75)   pc = scaleDegreePC(as.root, as.mode, 1);       // R2 Tonic
+    else if (r <  90)   pc = scaleDegreePC(as.root, as.mode, 4);       // R2 Sub
+    else if (r <  95)   pc = scaleDegreePC(as.root, as.mode, 5);       // R2 Dom
+    else                pc = randomOutOfScalePC(as.root, as.mode);     // R2 OOS
+  }
+
+  return adjustToRange(pc, inputMidi, minMidi, maxMidi);
+}
+
+// ── App state ──────────────────────────────────────────────────────────────
+let midiAccess     = null;
+let audioCtx       = null;
+let selectedInput  = null;
+let selectedOutput = null;
+let isRunning      = false;
+
+let noteCount      = 0;            // total Note-On events received
+let noteMemory     = [];           // last ≤32 input MIDI note numbers (newest first)
+let analyzedScale  = null;         // { root: 0-11, mode: 'major'|'minor' } | null
+
+/** Maps inputNote → { outNote, channel } for currently held notes. */
+const activeNotes  = new Map();
+
+/** Pending MIDI events: [{ type, scheduledTime, note, velocity, channel }] */
+let eventQueue     = [];
+let schedulerTimer = null;
+
+const LOOKAHEAD_S  = 0.100;  // look-ahead window: 100 ms
+const TICK_MS      = 25;     // scheduler tick interval
+
+// ── DOM references ─────────────────────────────────────────────────────────
+const startBtn          = document.getElementById('startBtn');
+const inputDeviceSel    = document.getElementById('inputDevice');
+const outputDeviceSel   = document.getElementById('outputDevice');
+const bpmInput          = document.getElementById('bpmInput');
+const scaleSelect       = document.getElementById('scaleSelect');
+const minNoteSel        = document.getElementById('minNote');
+const maxNoteSel        = document.getElementById('maxNote');
+const scaleDisplay      = document.getElementById('scaleDisplay');
+const noteCountDisplay  = document.getElementById('noteCountDisplay');
+const phaseBadge        = document.getElementById('phaseBadge');
+const noteListEl        = document.getElementById('noteList');
+const delayDisplay      = document.getElementById('delayDisplay');
+const memoryCountEl     = document.getElementById('memoryCount');
+const midiDot           = document.getElementById('midiDot');
+const midiStatusText    = document.getElementById('midiStatusText');
+const inDot             = document.getElementById('inDot');
+const outDot            = document.getElementById('outDot');
+
+// ── Note range dropdowns ───────────────────────────────────────────────────
+(function populateNoteDropdowns() {
+  for (let midi = 12; midi <= 108; midi++) {   // C0 – C8
+    const name = midiName(midi);
+
+    const o1 = document.createElement('option');
+    o1.value = midi; o1.textContent = name;
+    if (midi === 36) o1.selected = true;        // default Min = C2
+    minNoteSel.appendChild(o1);
+
+    const o2 = document.createElement('option');
+    o2.value = midi; o2.textContent = name;
+    if (midi === 84) o2.selected = true;        // default Max = C6
+    maxNoteSel.appendChild(o2);
+  }
+})();
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function getDelaySeconds() {
+  const bpm = Math.max(20, parseFloat(bpmInput.value) || 120);
+  return (60 / bpm) / 2;           // 8th-note duration
+}
+
+function updateDelayDisplay() {
+  delayDisplay.textContent = Math.round(getDelaySeconds() * 1000) + ' ms';
+}
+
+function setMidiDot(state) {        // 'connected' | 'error' | ''
+  midiDot.className = 'dot' + (state ? ' ' + state : '');
+}
+
+let inFlashTimer = null, outFlashTimer = null;
+function flashIn() {
+  inDot.classList.add('flash-in');
+  clearTimeout(inFlashTimer);
+  inFlashTimer = setTimeout(() => inDot.classList.remove('flash-in'), 110);
+}
+function flashOut() {
+  outDot.classList.add('flash-out');
+  clearTimeout(outFlashTimer);
+  outFlashTimer = setTimeout(() => outDot.classList.remove('flash-out'), 110);
+}
+
+// ── MIDI Initialization (separate from Start) ────────────────────────────
+const connectBtn = document.getElementById('connectBtn');
+const rescanBtn  = document.getElementById('rescanBtn');
+
+async function initMidi() {
+  if (!navigator.requestMIDIAccess) {
+    midiStatusText.textContent = 'Web MIDI API 非対応ブラウザです (Chrome推奨)';
+    setMidiDot('error');
+    return false;
+  }
+
+  connectBtn.textContent = '接続中...';
+  connectBtn.disabled    = true;
+
+  try {
+    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+  } catch (e) {
+    midiStatusText.textContent = 'MIDIアクセス エラー: ' + e.message;
+    setMidiDot('error');
+    connectBtn.textContent = '🔌 MIDI 接続';
+    connectBtn.disabled    = false;
+    return false;
+  }
+
+  midiAccess.onstatechange = () => refreshDeviceList();
+  refreshDeviceList();
+
+  const inputCount  = midiAccess.inputs.size;
+  const outputCount = midiAccess.outputs.size;
+
+  if (inputCount === 0 && outputCount === 0) {
+    midiStatusText.textContent = 'MIDIデバイスが見つかりません (LoopMIDIが起動しているか確認)';
+    setMidiDot('error');
+  } else {
+    midiStatusText.textContent = `デバイス検出: 入力 ${inputCount}件 / 出力 ${outputCount}件`;
+    setMidiDot('connected');
+  }
+
+  connectBtn.textContent = '✔ MIDI 接続済';
+  connectBtn.classList.add('midi-ok');
+  connectBtn.disabled    = false;
+  rescanBtn.disabled     = false;
+  inputDeviceSel.disabled  = false;
+  outputDeviceSel.disabled = false;
+  startBtn.disabled        = false;
+  return true;
+}
+
+connectBtn.addEventListener('click', () => initMidi());
+rescanBtn.addEventListener('click',  () => {
+  if (!midiAccess) { initMidi(); return; }
+  refreshDeviceList();
+  const ic = midiAccess.inputs.size, oc = midiAccess.outputs.size;
+  midiStatusText.textContent = `再スキャン完了: 入力 ${ic}件 / 出力 ${oc}件`;
+});
+
+// Auto-try MIDI init on page load (no user gesture required for non-sysex in Chrome)
+document.addEventListener('DOMContentLoaded', () => {
+  if (location.protocol === 'file:') {
+    document.getElementById('fileWarn').style.display = 'block';
+  }
+  // Best-effort auto-init; if browser blocks it, user clicks "MIDI 接続"
+  initMidi().catch(() => {});
+});
+
+// ── Start / Stop ───────────────────────────────────────────────────────────
+startBtn.addEventListener('click', () => {
+  if (isRunning) { stopAll(); return; }
+  if (!midiAccess) {
+    midiStatusText.textContent = 'まず「MIDI 接続」ボタンを押してください';
+    return;
+  }
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  startAll();
+});
+
+function startAll() {
+  isRunning = true;
+  startBtn.textContent = '■ Stop';
+  startBtn.classList.add('running');
+  midiStatusText.textContent = '接続済み・動作中';
+  setMidiDot('connected');
+  attachInputListener();
+  startScheduler();
+  updateDelayDisplay();
+}
+
+function stopAll() {
+  isRunning = false;
+  startBtn.textContent = '▶ Start';
+  startBtn.classList.remove('running');
+  midiStatusText.textContent = 'MIDI接続済・停止中';
+  setMidiDot('connected');
+  detachInputListener();
+  stopScheduler();
+  eventQueue = [];
+  activeNotes.clear();
+}
+
+// ── Device management ──────────────────────────────────────────────────────
+function refreshDeviceList() {
+  const prevIn  = inputDeviceSel.value;
+  const prevOut = outputDeviceSel.value;
+
+  inputDeviceSel.innerHTML  = '<option value="">-- 入力デバイスを選択 --</option>';
+  outputDeviceSel.innerHTML = '<option value="">-- 出力デバイスを選択 --</option>';
+
+  midiAccess.inputs.forEach(port => {
+    const o = document.createElement('option');
+    o.value = port.id; o.textContent = port.name;
+    if (port.id === prevIn) o.selected = true;
+    inputDeviceSel.appendChild(o);
+  });
+
+  midiAccess.outputs.forEach(port => {
+    const o = document.createElement('option');
+    o.value = port.id; o.textContent = port.name;
+    if (port.id === prevOut) o.selected = true;
+    outputDeviceSel.appendChild(o);
+  });
+
+  resolveDevices();
+}
+
+function resolveDevices() {
+  detachInputListener();
+
+  const inId  = inputDeviceSel.value;
+  const outId = outputDeviceSel.value;
+
+  selectedInput  = inId  ? midiAccess.inputs.get(inId)   ?? null : null;
+  selectedOutput = outId ? midiAccess.outputs.get(outId) ?? null : null;
+
+  if (isRunning) attachInputListener();
+}
+
+function attachInputListener() {
+  if (selectedInput) selectedInput.onmidimessage = handleMidiMessage;
+}
+
+function detachInputListener() {
+  if (selectedInput) selectedInput.onmidimessage = null;
+}
+
+inputDeviceSel.addEventListener('change',  resolveDevices);
+outputDeviceSel.addEventListener('change', resolveDevices);
+bpmInput.addEventListener('input', updateDelayDisplay);
+
+// ── MIDI input handler ─────────────────────────────────────────────────────
+function handleMidiMessage(msg) {
+  const [status, note, velocity] = msg.data;
+  const type    = status & 0xF0;
+  const channel = status & 0x0F;
+
+  const isNoteOn  = (type === 0x90 && velocity > 0);
+  const isNoteOff = (type === 0x80) || (type === 0x90 && velocity === 0);
+
+  if (!isNoteOn && !isNoteOff) return;
+
+  flashIn();
+
+  const delayS  = getDelaySeconds();
+  const fireAt  = audioCtx.currentTime + delayS;
+  const minMidi = parseInt(minNoteSel.value, 10) || 36;
+  const maxMidi = parseInt(maxNoteSel.value, 10) || 84;
+
+  if (isNoteOn) {
+    // Update memory & analysis BEFORE determining output note
+    noteCount++;
+    noteMemory.unshift(note);
+    if (noteMemory.length > 32) noteMemory.pop();
+    if (noteMemory.length >= 8) analyzedScale = analyzeScale(noteMemory);
+
+    const outNote = transformNote(
+      note, noteCount, scaleSelect.value, analyzedScale, minMidi, maxMidi
+    );
+
+    activeNotes.set(note, { outNote, channel });
+    enqueue({ type: 'noteOn',  scheduledTime: fireAt, note: outNote, velocity, channel });
+
+    updateUI();
+
+  } else if (isNoteOff) {
+    const active = activeNotes.get(note);
+    if (active) {
+      enqueue({ type: 'noteOff', scheduledTime: fireAt, note: active.outNote, channel: active.channel });
+      activeNotes.delete(note);
+    }
+  }
+}
+
+// ── Look-ahead scheduler (Web Audio API-based precision) ──────────────────
+function enqueue(evt) {
+  eventQueue.push(evt);
+}
+
+function startScheduler() {
+  if (schedulerTimer) clearInterval(schedulerTimer);
+  schedulerTimer = setInterval(schedulerTick, TICK_MS);
+}
+
+function stopScheduler() {
+  if (schedulerTimer) { clearInterval(schedulerTimer); schedulerTimer = null; }
+}
+
+function schedulerTick() {
+  if (!audioCtx) return;
+  const now      = audioCtx.currentTime;
+  const horizon  = now + LOOKAHEAD_S;
+  const remaining = [];
+
+  for (const evt of eventQueue) {
+    if (evt.scheduledTime <= horizon) {
+      // Schedule via setTimeout using remaining delta for sub-tick accuracy
+      const delayMs = Math.max(0, (evt.scheduledTime - now) * 1000);
+      setTimeout(() => fireMidi(evt), delayMs);
+    } else {
+      remaining.push(evt);
+    }
+  }
+  eventQueue = remaining;
+}
+
+function fireMidi(evt) {
+  if (!selectedOutput) return;
+  flashOut();
+  const ch = evt.channel & 0x0F;
+  const n  = evt.note    & 0x7F;
+  if (evt.type === 'noteOn') {
+    selectedOutput.send([0x90 | ch, n, evt.velocity & 0x7F]);
+  } else {
+    selectedOutput.send([0x80 | ch, n, 0]);
+  }
+}
+
+// ── UI refresh ─────────────────────────────────────────────────────────────
+function updateUI() {
+  // Note count + phase badge
+  noteCountDisplay.textContent = noteCount;
+  if (noteCount <= 8) {
+    phaseBadge.textContent  = 'Phase A';
+    phaseBadge.className    = 'phase-badge phase-a';
+  } else {
+    phaseBadge.textContent  = 'Phase B';
+    phaseBadge.className    = 'phase-badge phase-b';
+  }
+
+  // Analysed scale
+  if (analyzedScale) {
+    const name = NOTE_NAMES[analyzedScale.root] + ' ' +
+                 (analyzedScale.mode === 'major' ? 'Major' : 'Minor');
+    scaleDisplay.textContent = name;
+    scaleDisplay.className   = 'scale-display found';
+  } else {
+    scaleDisplay.textContent = 'Analyzing...';
+    scaleDisplay.className   = 'scale-display analyzing';
+  }
+
+  // Memory count
+  memoryCountEl.textContent = noteMemory.length + ' / 32';
+
+  // Note tag list (newest first)
+  noteListEl.innerHTML = '';
+  if (noteMemory.length === 0) {
+    const span = document.createElement('span');
+    span.className = 'empty-msg';
+    span.textContent = 'ノートを入力してください...';
+    noteListEl.appendChild(span);
+  } else {
+    noteMemory.forEach((n, i) => {
+      const span = document.createElement('span');
+      span.className   = 'note-tag' + (i === 0 ? ' newest' : '');
+      span.textContent = midiName(n);
+      span.title       = 'MIDI ' + n;
+      noteListEl.appendChild(span);
+    });
+  }
+}
+
+// ── Bootstrap ──────────────────────────────────────────────────────────────
+updateDelayDisplay();
+</script>
+</body>
+</html>
