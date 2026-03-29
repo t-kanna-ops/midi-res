@@ -805,6 +805,9 @@ let analyzedScale  = null;         // { root: 0-11, mode: 'major'|'minor' } | nu
 /** Maps inputNote → { outNote, channel } for currently held notes. */
 const activeNotes  = new Map();
 
+/** Input notes buffered until the next active sequencer step fires. */
+let pendingNotes   = [];           // [{ note, velocity, channel }, ...]
+
 /** Pending MIDI events: [{ type, scheduledTime, note, velocity, channel }] */
 let eventQueue     = [];
 let schedulerTimer = null;
@@ -998,7 +1001,8 @@ function stopAll() {
   detachInputListener();
   stopScheduler();
   stopSeqClock();
-  eventQueue = [];
+  eventQueue   = [];
+  pendingNotes = [];
   activeNotes.clear();
 }
 
@@ -1063,36 +1067,20 @@ function handleMidiMessage(msg) {
 
   flashIn();
 
-  const delayS  = getDelaySeconds();
-  const fireAt  = audioCtx.currentTime + delayS;
-  const minMidi = parseInt(minNoteSel.value, 10) || 36;
-  const maxMidi = parseInt(maxNoteSel.value, 10) || 84;
-
   if (isNoteOn) {
-    // Update memory & analysis BEFORE determining output note
-    noteCount++;
-    noteMemory.unshift(note);
-    if (noteMemory.length > 32) noteMemory.pop();
-    if (noteMemory.length >= 8) analyzedScale = analyzeScale(noteMemory);
-
-    // Only output if the current sequencer step is active
-    const currentStep = (seqStep - 1 + SEQ_STEPS) % SEQ_STEPS;
-    if (seqState[currentStep]) {
-      const outNote = transformNote(
-        note, noteCount, scaleSelect.value, analyzedScale, minMidi, maxMidi
-      );
-
-      activeNotes.set(note, { outNote, channel });
-      enqueue({ type: 'noteOn',  scheduledTime: fireAt, note: outNote, velocity, channel });
-    }
-
-    updateUI();
+    // Buffer the note; processing and output happen when the next active step fires
+    pendingNotes.push({ note, velocity, channel });
 
   } else if (isNoteOff) {
+    // If already output, schedule noteOff immediately
     const active = activeNotes.get(note);
     if (active) {
-      enqueue({ type: 'noteOff', scheduledTime: fireAt, note: active.outNote, channel: active.channel });
+      enqueue({ type: 'noteOff', scheduledTime: audioCtx.currentTime, note: active.outNote, channel: active.channel });
       activeNotes.delete(note);
+    } else {
+      // Still buffered — remove from queue (note released before a step fired)
+      const idx = pendingNotes.findIndex(p => p.note === note && p.channel === channel);
+      if (idx !== -1) pendingNotes.splice(idx, 1);
     }
   }
 }
@@ -1250,6 +1238,29 @@ function advanceSeq() {
   const btns = getSeqButtons();
   btns.forEach(b => b.classList.remove('playing'));
   if (btns[seqStep]) btns[seqStep].classList.add('playing');
+
+  // If this step is ON and there are buffered notes, process one now
+  if (seqState[seqStep] && pendingNotes.length > 0) {
+    const { note, velocity, channel } = pendingNotes.shift();
+    const minMidi = parseInt(minNoteSel.value, 10) || 36;
+    const maxMidi = parseInt(maxNoteSel.value, 10) || 84;
+
+    // Add to memory & update analysis
+    noteCount++;
+    noteMemory.unshift(note);
+    if (noteMemory.length > 32) noteMemory.pop();
+    if (noteMemory.length >= 8) analyzedScale = analyzeScale(noteMemory);
+
+    const outNote = transformNote(
+      note, noteCount, scaleSelect.value, analyzedScale, minMidi, maxMidi
+    );
+
+    activeNotes.set(note, { outNote, channel });
+    enqueue({ type: 'noteOn', scheduledTime: audioCtx.currentTime, note: outNote, velocity, channel });
+
+    updateUI();
+  }
+
   seqStep = (seqStep + 1) % SEQ_STEPS;
 }
 
